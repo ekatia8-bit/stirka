@@ -48,6 +48,18 @@
             background: #000;
         }
 
+        /* Скрываем стандартную кнопку Play браузера */
+        #video-layer::-webkit-media-controls-start-playback-button {
+            display: none !important;
+            -webkit-appearance: none;
+        }
+        #video-layer::-webkit-media-controls {
+            display: none !important;
+        }
+        #video-layer::-webkit-media-controls-enclosure {
+            display: none !important;
+        }
+
         #secret-btn {
             position: absolute;
             top: 20px; left: 20px;
@@ -69,7 +81,7 @@
 
     <div id="background-layer"></div>
     <canvas id="scratch-canvas"></canvas>
-    <video id="video-layer" muted playsinline preload="auto" src="driving.mp4"></video>
+    <video id="video-layer" muted playsinline autoplay preload="auto" src="driving.mp4"></video>
     <button id="secret-btn" aria-label="Запустить видео"></button>
 
     <script>
@@ -82,7 +94,7 @@
             let isDrawing = false;
             let lastX = 0, lastY = 0;
             let videoLaunched = false;
-            let launchTriggered = false; // Чтобы не запускать дважды
+            let launchTriggered = false;
             const LAUNCH_THRESHOLD = 0.70;
 
             const dirtyImg = new Image();
@@ -146,50 +158,67 @@
                 } catch (e) { return 0; }
             }
 
+            function tryPlayVideo() {
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('✅ Видео запущено');
+                    }).catch(error => {
+                        console.warn('Повторная попытка play():', error);
+                        // Повторная попытка через 100мс
+                        setTimeout(() => {
+                            video.play().catch(() => {});
+                        }, 100);
+                    });
+                }
+            }
+
             function launchVideo() {
                 if (launchTriggered) return;
                 launchTriggered = true;
 
-                // Начинаем загрузку видео заранее
+                // Показываем видео
+                canvas.style.display = 'none';
+                secretBtn.style.display = 'none';
+                video.style.display = 'block';
+
+                // Начинаем загрузку
                 video.load();
 
-                // Ждём готовности видео
-                video.oncanplaythrough = () => {
-                    if (videoLaunched) return;
-                    videoLaunched = true;
-                    
-                    // Скрываем canvas и кнопку
-                    canvas.style.display = 'none';
-                    secretBtn.style.display = 'none';
-                    
-                    // Показываем и запускаем видео
-                    video.style.display = 'block';
-                    
-                    const playPromise = video.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(error => {
-                            console.error('Автозапуск не сработал:', error);
-                            // Если не сработал автозапуск (file:// режим)
-                            // показываем видео с controls
-                            video.controls = true;
-                        });
-                    }
+                // Пробуем запустить сразу (если уже в кеше)
+                setTimeout(tryPlayVideo, 50);
+
+                // Запускаем когда видео готово
+                video.oncanplay = () => {
+                    console.log('Видео canplay');
+                    tryPlayVideo();
                 };
 
-                video.onerror = () => {
-                    console.error('Ошибка загрузки видео');
+                video.oncanplaythrough = () => {
+                    console.log('Видео canplaythrough');
+                    tryPlayVideo();
                 };
+
+                video.onloadeddata = () => {
+                    console.log('Видео loadeddata');
+                    tryPlayVideo();
+                };
+
+                // Дополнительная попытка через 500мс
+                setTimeout(tryPlayVideo, 500);
+                setTimeout(tryPlayVideo, 1000);
             }
 
             function checkAndLaunch() {
                 if (videoLaunched || launchTriggered) return;
                 if (getScratchPercent() >= LAUNCH_THRESHOLD) {
+                    videoLaunched = true;
                     launchVideo();
                 }
             }
 
-            // Секретная кнопка тоже запускает видео
             secretBtn.addEventListener('click', () => {
+                videoLaunched = true;
                 launchVideo();
             });
 
