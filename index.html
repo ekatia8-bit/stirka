@@ -62,24 +62,7 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        #play-btn {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 120px; height: 120px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.95);
-            border: none;
-            cursor: pointer;
-            z-index: 20;
-            display: none;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-            font-size: 48px;
-            transition: transform 0.2s;
-        }
-
-        #play-btn:hover { transform: translate(-50%, -50%) scale(1.1); }
-        #play-btn:active { transform: translate(-50%, -50%) scale(0.95); }
+        #secret-btn:active { opacity: 0.5; }
     </style>
 </head>
 <body>
@@ -88,7 +71,6 @@
     <canvas id="scratch-canvas"></canvas>
     <video id="video-layer" muted playsinline preload="auto" src="driving.mp4"></video>
     <button id="secret-btn" aria-label="Запустить видео"></button>
-    <button id="play-btn">▶</button>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -96,11 +78,11 @@
             const ctx = canvas.getContext('2d');
             const video = document.getElementById('video-layer');
             const secretBtn = document.getElementById('secret-btn');
-            const playBtn = document.getElementById('play-btn');
 
             let isDrawing = false;
             let lastX = 0, lastY = 0;
             let videoLaunched = false;
+            let launchTriggered = false; // Чтобы не запускать дважды
             const LAUNCH_THRESHOLD = 0.70;
 
             const dirtyImg = new Image();
@@ -164,40 +146,52 @@
                 } catch (e) { return 0; }
             }
 
-            function checkAndLaunch() {
-                if (videoLaunched) return;
-                if (getScratchPercent() >= LAUNCH_THRESHOLD) showPlayButton();
-            }
+            function launchVideo() {
+                if (launchTriggered) return;
+                launchTriggered = true;
 
-            function showPlayButton() {
-                canvas.style.display = 'none';
-                secretBtn.style.display = 'none';
-                playBtn.style.display = 'block';
+                // Начинаем загрузку видео заранее
                 video.load();
-            }
 
-            function startVideo() {
-                if (videoLaunched) return;
-                videoLaunched = true;
-                playBtn.style.display = 'none';
-                video.style.display = 'block';
-
-                const tryPlay = () => {
-                    video.play().catch(() => {
-                        video.controls = true;
-                    });
+                // Ждём готовности видео
+                video.oncanplaythrough = () => {
+                    if (videoLaunched) return;
+                    videoLaunched = true;
+                    
+                    // Скрываем canvas и кнопку
+                    canvas.style.display = 'none';
+                    secretBtn.style.display = 'none';
+                    
+                    // Показываем и запускаем видео
+                    video.style.display = 'block';
+                    
+                    const playPromise = video.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.error('Автозапуск не сработал:', error);
+                            // Если не сработал автозапуск (file:// режим)
+                            // показываем видео с controls
+                            video.controls = true;
+                        });
+                    }
                 };
 
-                if (video.readyState >= 2) {
-                    tryPlay();
-                } else {
-                    video.oncanplay = tryPlay;
+                video.onerror = () => {
+                    console.error('Ошибка загрузки видео');
+                };
+            }
+
+            function checkAndLaunch() {
+                if (videoLaunched || launchTriggered) return;
+                if (getScratchPercent() >= LAUNCH_THRESHOLD) {
+                    launchVideo();
                 }
             }
 
-            playBtn.addEventListener('click', startVideo);
-            secretBtn.addEventListener('click', showPlayButton);
-            video.addEventListener('click', () => { if (video.paused) video.play(); });
+            // Секретная кнопка тоже запускает видео
+            secretBtn.addEventListener('click', () => {
+                launchVideo();
+            });
 
             function getCoords(e) {
                 if (e.touches && e.touches.length) {
@@ -207,7 +201,7 @@
             }
 
             function startDrawing(e) {
-                if (videoLaunched) return;
+                if (videoLaunched || launchTriggered) return;
                 e.preventDefault();
                 isDrawing = true;
                 const c = getCoords(e);
@@ -218,7 +212,7 @@
             }
 
             function draw(e) {
-                if (!isDrawing || videoLaunched) return;
+                if (!isDrawing || videoLaunched || launchTriggered) return;
                 e.preventDefault();
                 const c = getCoords(e);
                 ctx.beginPath();
